@@ -231,8 +231,8 @@ function viewEntities() {
     <button class="chip active" data-kind="all">全部 <b>${WIKI.entities.length}</b></button>
     ${kinds.map(k => `<button class="chip" data-kind="${esc(k)}">${esc(kindLabel(k))} <b>${counts[k]}</b></button>`).join('')}
     <select id="ent-sort" class="sel">
+      <option value="sessions">按会话数（广度）</option>
       <option value="mentions">按提及数</option>
-      <option value="sessions">按会话数</option>
       <option value="name">按名称</option>
     </select>
   </div>

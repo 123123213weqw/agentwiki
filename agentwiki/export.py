@@ -39,6 +39,79 @@ MAX_SESSIONS_PER_ENTITY = 60
 # file names, and showing them dilutes the repos/concepts that matter.
 KIND_ORDER = ["repo", "path", "error", "pr", "issue", "pkg", "domain", "file"]
 
+# Guaranteed slots per kind, before the remaining budget goes to breadth.
+#
+# Ranking alone cannot fix this.  Measured on a real corpus: ordering by breadth
+# still left 80.5% of the export as file names and paths, because there are 4107
+# file entities and only 55 errors -- population, not ordering, decides the mix.
+# Worse, raw-frequency ordering buried 54 of those 55 errors below a cut-off of
+# 13 mentions, so the most actionable signal in the corpus was unreachable in the
+# UI.  Floors make the composition a deliberate choice instead of an accident.
+KIND_FLOOR = {
+    "error": 60,     # 55 exist: show every one of them
+    "repo": 45,
+    "pr": 40,
+    "issue": 35,
+    "pkg": 35,       # 35 exist: all
+    "domain": 35,
+    "path": 40,
+    "file": 60,
+}
+
+
+def _select_with_floors(pool, by_intensity, max_entities: int) -> list:
+    """Give every kind its floor, then spend the rest on the deepest dives.
+
+    `pool` must be sorted by *breadth* (how many sessions touch it); it decides
+    who gets a floor slot.  `by_intensity` is the same rows sorted by raw mention
+    count; it decides who gets the leftover slots.
+
+    Two orderings, deliberately.  Breadth finds what recurs across your work
+    (`github.com`, 65 sessions); intensity finds what you hammered on inside a
+    handful of them (a 369-mention file touched in only 2 sessions).  Ranking by
+    either one alone silently deletes the other kind of knowledge -- and because
+    the export is capped, "excluded" means "unreachable in the UI", not merely
+    "ranked lower".
+
+    The floors are handed out *round-robin* (one slot per kind per round) rather
+    than by walking the pool in order.  Walking the pool is order-dependent and
+    quietly wrong whenever the cap is smaller than the sum of the floors: the
+    highest-breadth kind fills the quota during pass 1 and returns before a rare
+    kind -- an `error`, say, sitting at the bottom of the pool -- is ever
+    reached.  Round-robin makes the guarantee hold for any `max_entities`.
+    """
+    by_kind: dict[str, list] = {}
+    for r in pool:
+        by_kind.setdefault(r["kind"], []).append(r)
+
+    picked: list = []
+    seen: set[str] = set()
+    deepest = max(KIND_FLOOR.values()) if KIND_FLOOR else 0
+
+    # Pass 1: round-robin up to each kind's floor.
+    for depth in range(deepest):
+        for kind, floor in KIND_FLOOR.items():
+            if depth >= floor:
+                continue
+            bucket = by_kind.get(kind)
+            if not bucket or depth >= len(bucket):
+                continue
+            r = bucket[depth]
+            picked.append(r)
+            seen.add(r["entity_id"])
+            if len(picked) >= max_entities:
+                return picked[:max_entities]
+
+    # Pass 2: spend whatever is left on the most intensely-worked entities.
+    for r in by_intensity:
+        if len(picked) >= max_entities:
+            break
+        if r["entity_id"] not in seen:
+            seen.add(r["entity_id"])
+            picked.append(r)
+
+    return picked[:max_entities]
+
 
 def _iso(ms: int | None) -> str | None:
     if not ms:
@@ -197,14 +270,23 @@ def build(
             s["entity_ids"].append(r["eid"])
 
     # ---------------------------------------------------------------- entities
-    rows = q(
+    # Order by *breadth* (how many distinct sessions touch it), not raw mention
+    # count.  A file name is mentioned every time a tool call touches it, so it
+    # accumulates huge counts inside one or two sessions (`d:/kaiwu_...` had 1767
+    # mentions across 2 sessions) while something genuinely central (`github.com`)
+    # spreads across 65.  Breadth is the honest signal and it is already measured.
+    pool = q(
         """SELECT entity_id, kind, canonical, first_seen, last_seen,
                   mention_count, session_count
            FROM entities
            WHERE kind IN ('repo','path','error','pr','issue','pkg','domain','file')
-           ORDER BY mention_count DESC LIMIT ?""",
-        (max_entities,),
+           ORDER BY session_count DESC, mention_count DESC"""
     )
+    # Same rows, ordered by the other signal, for the leftover slots.
+    by_intensity = sorted(
+        pool, key=lambda r: (-r["mention_count"], -r["session_count"])
+    )
+    rows = _select_with_floors(pool, by_intensity, max_entities)
 
     entities = []
     for r in rows:

@@ -150,6 +150,81 @@ def test_kind_filter_excludes_unknown_kinds():
     assert "noise:x" not in {e["id"] for e in data["entities"]}
 
 
+def test_rare_but_meaningful_kind_survives_the_cap():
+    """Regression: ranking by frequency alone buried almost every error.
+
+    Measured on the real corpus, a pure `ORDER BY mention_count DESC LIMIT 400`
+    exported 292 files, 70 paths and exactly **1** of 55 error entities: a file
+    name is mentioned on every tool call that touches it, so frequency selects
+    for the incidental.  The per-kind floors exist to make that impossible.
+
+    Here 20 files out-rank one error on every frequency signal, and the error
+    must still be exported.
+    """
+    conn = _mem()
+    for i in range(20):
+        conn.execute(
+            """INSERT INTO entities (entity_id, kind, canonical, first_seen,
+                                     last_seen, mention_count, session_count)
+               VALUES (?, 'file', ?, 1, 1, ?, ?)""",
+            (f"file:noisy{i}.py", f"noisy{i}.py", 5000 - i, 90),
+        )
+    # Last on every ranking: one mention, one session, one kind.
+    conn.execute(
+        """INSERT INTO entities (entity_id, kind, canonical, first_seen,
+                                 last_seen, mention_count, session_count)
+           VALUES ('error:RareButMeaningful', 'error', 'RareButMeaningful', 1, 1, 1, 1)"""
+    )
+    conn.commit()
+
+    # Cap well below the 20 files + 1 error, so a pure top-N would drop it.
+    data = export.build(conn, max_entities=6)
+    kinds = {e["kind"] for e in data["entities"]}
+
+    assert "error" in kinds, (
+        "the only error entity was dropped: floors are not being applied"
+    )
+    assert "error:RareButMeaningful" in {e["id"] for e in data["entities"]}
+
+
+def test_floors_never_exceed_the_cap():
+    """Floors are a preference, not an override: the cap is still the cap."""
+    conn = _mem()
+    for kind in export.KIND_FLOOR:
+        for i in range(80):
+            conn.execute(
+                """INSERT INTO entities (entity_id, kind, canonical, first_seen,
+                                         last_seen, mention_count, session_count)
+                   VALUES (?, ?, ?, 1, 1, ?, 1)""",
+                (f"{kind}:e{i}", kind, f"{kind}-{i}", 100 - i),
+            )
+    conn.commit()
+
+    for cap in (1, 7, 50, 400):
+        data = export.build(conn, max_entities=cap)
+        assert len(data["entities"]) <= cap, f"cap {cap} exceeded"
+
+
+def test_ranking_prefers_breadth_over_raw_mentions():
+    """A name smeared across many sessions should outrank one hammered inside a
+    single session -- that is the whole reason for ordering by session_count."""
+    conn = _mem()
+    conn.execute(
+        """INSERT INTO entities (entity_id, kind, canonical, first_seen,
+                                 last_seen, mention_count, session_count)
+           VALUES ('file:narrow.py','file','narrow.py',1,1,9999,2)"""
+    )
+    conn.execute(
+        """INSERT INTO entities (entity_id, kind, canonical, first_seen,
+                                 last_seen, mention_count, session_count)
+           VALUES ('file:broad.py','file','broad.py',1,1,30,40)"""
+    )
+    conn.commit()
+
+    data = export.build(conn, max_entities=1)
+    assert data["entities"][0]["id"] == "file:broad.py"
+
+
 def test_write_is_atomic_and_reports_shape(tmp_path):
     conn = _mem()
     _seed(conn)
