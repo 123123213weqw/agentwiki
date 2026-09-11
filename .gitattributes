@@ -1,0 +1,21 @@
+# Normalise line endings so the repo is usable from both Windows and Linux.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary / data files are never touched.
+*.png binary
+*.jpg binary
+*.ico binary
+*.db binary
+*.sqlite binary
+
+# Keep diffs readable.
+*.md text
+*.py text
+*.toml text
+*.json text
+*.txt text

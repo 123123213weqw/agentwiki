@@ -1,0 +1,34 @@
+# ---------------------------------------------------------------- python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# ---------------------------------------------------------------- local state
+# The wiki database holds excerpts of your own agent sessions.  It is personal
+# data and must never be committed.
+*.db
+*.db-wal
+*.db-shm
+reports/
+snapshots/
+
+# ---------------------------------------------------------------- recon dumps
+# Raw reconnaissance output: real session paths, real hostnames, real code.
+# Useful locally, never publishable.
+tools/*.txt
+tools/recon/
+tools/diag/
+
+# ---------------------------------------------------------------- secrets
+.env
+.env.*
+*.pem
+*.key
+auth.json
