@@ -52,7 +52,14 @@ python -m agentwiki shell                 # 交互式 SQL
    **都**过 `redact.scrub()`。早期的 bug 正是只脱敏了 `text`，导致 `raw_json` 泄露真实密钥。
 4. **`\b` 陷阱**：Python 正则里中文属于 `\w`，所以 `嗯sk-xxx` 中 `\bsk-` **永不匹配**。
    所有 token 规则改用 ASCII 后顾断言 `(?<![A-Za-z0-9_])`。
-5. `audit.py` / `locate_leak.py` / `verify_purge.py` 是回归检查脚本，改完脱敏规则请重跑。
+5. **发布前自检**：`tools/prepublish_scan.py` 扫工作树，`tools/verify_remote.py` 拉取
+   **GitHub 上真实发布的内容**重扫（只信本地提交是不够的——push hook、remote 配错、
+   分支搞错都会让发布内容与扫描内容不一致）。`tools/audit.py` 查库内完整性，
+   `tools/find_needle.py <串>` 定位任意字符串在库里的位置。
+
+   ⚠️ 写这类扫描器时踩过的坑：把真实用户名放进 `ALLOWLIST`（等于放行）、
+   路径正则要双反斜杠（匹配不到单反斜杠的真实路径）——**安全工具误报 CLEAN
+   比不检查更危险**，所以它必须自己能被验证（拿已知的泄露样本喂它）。
 
 > 自我反馈环：调试 wiki 的过程本身会被 xharness 记录并回采。调试时不要把密钥原文粘进对话。
 
@@ -64,6 +71,16 @@ python -m agentwiki shell                 # 交互式 SQL
 - 长会话有 `contextCompaction` 标记（134 处），其上下文是**残缺**的，不要当成原始陈述。
 - codex 的 `thread_history_1.sqlite` 是 codex 自己的投影，字段随版本变化；
   `thread_history_projection_state` 里有它的消费游标，可搭车做增量。
+
+## 开发 / 测试
+
+```bash
+python -m pytest tests -q            # 单元测试（脱敏规则回归，7 例）
+python tools/prepublish_scan.py      # 发布前扫描工作树
+python tools/verify_remote.py        # 扫描 GitHub 上真实发布的内容
+```
+
+MIT License. 见 [`LICENSE`](LICENSE)。
 
 ## 下一步（W1）
 
