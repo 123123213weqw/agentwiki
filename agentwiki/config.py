@@ -15,6 +15,10 @@ AGENTWIKI_HOME = Path(os.environ.get("AGENTWIKI_HOME", HOME / ".agentwiki"))
 DB_PATH = AGENTWIKI_HOME / "wiki.db"
 REPORT_DIR = AGENTWIKI_HOME / "reports"
 SNAPSHOT_DIR = AGENTWIKI_HOME / "snapshots"
+# Where `export` drops wiki.json, i.e. the data the UI fetches.
+WEB_DIR = AGENTWIKI_HOME / "web"
+# Static assets shipped in the repo (index.html / app.js / styles.css).
+WEB_SRC = Path(__file__).resolve().parent.parent / "web"
 
 # ---------------------------------------------------------------- codex
 CODEX_DIR = HOME / ".codex"

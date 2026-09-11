@@ -13,7 +13,7 @@ import sqlite3
 import sys
 import time
 
-from . import config, db, terrain
+from . import config, db, export, server, terrain
 
 
 def _enc() -> None:
@@ -112,6 +112,31 @@ def cmd_shell(args) -> int:
             print("error:", e)
 
 
+def cmd_export(args) -> int:
+    from . import export
+
+    conn = db.store()
+    res = export.write(conn, max_entities=args.max_entities, snippets=args.snippets)
+    print(f"[export] {res['entities']} entities / {res['sessions']} sessions "
+          f"-> {res['bytes'] / 1e6:.2f} MB")
+    print(f"[export] {res['path']}")
+    return 0
+
+
+def cmd_serve(args) -> int:
+    from . import export, server
+
+    conn = db.store()
+    wiki = config.WEB_DIR / "wiki.json"
+    # Re-export when missing or explicitly requested, so `serve` cannot show
+    # data that no longer matches the database.
+    if not wiki.exists() or args.export:
+        res = export.write(conn, max_entities=args.max_entities, snippets=args.snippets)
+        print(f"[serve] exported {res['entities']} entities -> {res['bytes'] / 1e6:.2f} MB")
+
+    return server.serve(port=args.port, open_browser=args.open)
+
+
 def main(argv=None) -> int:
     _enc()
     p = argparse.ArgumentParser(prog="agentwiki", description="Personal knowledge wiki built from your agent sessions.")
@@ -130,6 +155,19 @@ def main(argv=None) -> int:
 
     sh = sub.add_parser("shell", help="interactive sql shell over the wiki db")
     sh.set_defaults(fn=cmd_shell)
+
+    ex = sub.add_parser("export", help="write wiki.json for the web UI")
+    ex.add_argument("--max-entities", type=int, default=export.DEFAULT_MAX_ENTITIES)
+    ex.add_argument("--snippets", type=int, default=export.DEFAULT_SNIPPETS)
+    ex.set_defaults(fn=cmd_export)
+
+    sv = sub.add_parser("serve", help="serve the web UI on localhost")
+    sv.add_argument("--port", type=int, default=8787)
+    sv.add_argument("--max-entities", type=int, default=export.DEFAULT_MAX_ENTITIES)
+    sv.add_argument("--snippets", type=int, default=export.DEFAULT_SNIPPETS)
+    sv.add_argument("--export", action="store_true", help="re-export before serving")
+    sv.add_argument("--open", action="store_true", help="open a browser")
+    sv.set_defaults(fn=cmd_serve)
 
     args = p.parse_args(argv)
     return args.fn(args)

@@ -18,6 +18,9 @@ env/
 *.db-shm
 reports/
 snapshots/
+# The exported UI payload is derived from the db: same personal data, so it is
+# ignored too (it lives in ~/.agentwiki/web by default, but guard in-place runs).
+wiki.json
 
 # ---------------------------------------------------------------- recon dumps
 # Raw reconnaissance output: real session paths, real hostnames, real code.

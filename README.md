@@ -16,6 +16,8 @@ sqlite 库，并用纯正则抽出知识图谱的**骨架**。**零 LLM 调用�
 ```bash
 python -m agentwiki ingest --source all   # 采集全部来源（约 25 秒）
 python -m agentwiki terrain               # 生成知识地形图
+python -m agentwiki export                # 导出 wiki.json（UI 的数据接缝）
+python -m agentwiki serve --open          # 起本地 UI（http://127.0.0.1:8787）
 python -m agentwiki stats                 # 看库内容摘要
 python -m agentwiki shell                 # 交互式 SQL
 ```
@@ -39,6 +41,39 @@ python -m agentwiki shell                 # 交互式 SQL
 | xharness | 14 | 5,239 | `state/sessions/*.jsonl` |
 
 等待时长分布（p50 **1.1 分钟**，p90 **11.8 分钟**）——直接喂给"死时间学习"产品。
+
+---
+
+## Web UI
+
+```bash
+python -m agentwiki export      # sqlite -> ~/.agentwiki/web/wiki.json
+python -m agentwiki serve       # http://127.0.0.1:8787（只绑 localhost）
+```
+
+UI 是**零构建**的静态页面（`web/`，原生 JS + CSS，无 npm、无框架），由标准库
+http 服务器喂数据。四个页面：概览（地形 / 等待时长 / 时间线）、实体、会话、图谱。
+
+设计上有一条硬边界：
+
+> **接缝是一个文件，不是一次导入。** `export.py` 把库压成一个 `wiki.json`，
+> UI 只认这个文件。前端换语言、换框架都不影响核心；核心也**永远不会**长出
+> 对展示层的依赖。
+
+`wiki.json` 是**有意封顶**的（默认前 400 实体 × 3 条片段，实测 0.63 MB）。
+227 MB 的库不可能也不应该变成 227 MB 的 JSON：UI 要的是地形**形状**，加上足够
+的**出处**让人点得下去，而不是每个字节。所有上限都是 `export.py` 的参数。
+
+四条 wiki 要求里，L0 已经给到 **出处（provenance）**：每条片段都带
+`session_id` + `item_id`，所以页面上任何一句话都能追回原始条目。
+
+**反向链接**在客户端从 `session.entity_ids` 现算，而不是导出预计算的邻接表——
+更小，且前端能自由派生共现、按仓库聚合等任意视图。
+
+> 维护提示：`web/app.js` 输出什么类名，`web/styles.css` 就必须定义什么。两者
+> 手工维护会**静默漂移**——页面照样能打开，但元素丢了布局（统计卡片会竖着堆成
+> 一列，而且没有任何报错）。`tools/class_audit.py` 把这个 bug 变响；它自己能被
+> 注入的缺失类名验证，所以它报 OK 是可信的。
 
 ---
 
@@ -75,7 +110,9 @@ python -m agentwiki shell                 # 交互式 SQL
 ## 开发 / 测试
 
 ```bash
-python -m pytest tests -q            # 单元测试（脱敏规则回归，7 例）
+python -m pytest tests -q            # 单元测试（脱敏 7 例 + 导出契约 5 例）
+python tools/class_audit.py          # 校验 CSS 类名覆盖（防 UI 静默漂移）
+python tools/check_contract.py       # 校验 wiki.json 契约与引用完整性
 python tools/prepublish_scan.py      # 发布前扫描工作树
 python tools/verify_remote.py        # 扫描 GitHub 上真实发布的内容
 ```
