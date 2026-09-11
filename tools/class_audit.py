@@ -109,6 +109,44 @@ def defined_classes() -> set[str]:
     return set(CSS_CLASS.findall(css))
 
 
+# `var(--x)` / `var(--x, fallback)` references, and `--x: value` declarations.
+VAR_USE = re.compile(r"var\(\s*(--[A-Za-z0-9_-]+)")
+VAR_DECL = re.compile(r"^\s*(--[A-Za-z0-9_-]+)\s*:", re.M)
+
+
+def _css_text() -> str:
+    return (WEB / "styles.css").read_text(encoding="utf-8", errors="replace")
+
+
+def referenced_vars() -> set[str]:
+    return set(VAR_USE.findall(_css_text()))
+
+
+def declared_vars() -> set[str]:
+    # Comments can mention a variable without declaring it.
+    css = re.sub(r"/\*.*?\*/", "", _css_text(), flags=re.S)
+    return set(VAR_DECL.findall(css))
+
+
+VAR_DEF = re.compile(r"(--[\w-]+)\s*:")
+VAR_USE = re.compile(r"var\(\s*(--[\w-]+)")
+
+
+def undefined_vars() -> list[str]:
+    """CSS custom properties that are used but never declared.
+
+    The same silent-drift failure as class names, one level down: a reference to
+    `var(--radius)` when the sheet only defines `--r` produces no error, no
+    warning, and simply drops the property.  That is exactly how the graph
+    legend first shipped with no background.
+    """
+    css = (WEB / "styles.css").read_text(encoding="utf-8", errors="replace")
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    declared = set(VAR_DEF.findall(css))
+    # Inline fallbacks, e.g. var(--x, 8px), are still a use of --x.
+    return sorted({v for v in VAR_USE.findall(css) if v not in declared})
+
+
 def main() -> int:
     used, prefixes = emitted_classes()
     defined = defined_classes()
@@ -131,10 +169,21 @@ def main() -> int:
     stale = sorted(c for c in used if c not in defined)
     dead = sorted(c for c in defined if c not in used)
 
+    # Custom properties are the same failure mode as class names: reference a
+    # variable that was never declared and the declaration is silently dropped
+    # (a `var(--radius)` typo leaves an element without its corner radius, with
+    # no error anywhere).  Checked here so the two cannot drift apart.
+    bad_vars = sorted(v for v in referenced_vars() if v not in declared_vars())
+
     if stale:
         print(f"\nUNSTYLED ({len(stale)}) -- emitted but no CSS rule exists:")
         for c in stale:
             print(f"   {c}   (used {used[c]}x)")
+    if bad_vars:
+        print(f"\nUNDECLARED CSS VARIABLES ({len(bad_vars)}) -- "
+              f"used in a var() but never defined in :root:")
+        for v in bad_vars:
+            print(f"   {v}")
     if unknown_prefixes:
         print(f"\nUNRESOLVED PREFIXES ({len(unknown_prefixes)}): "
               + " ".join(unknown_prefixes))
@@ -142,7 +191,7 @@ def main() -> int:
         print(f"\nDEAD CSS ({len(dead)}) -- rule exists but nothing emits it:")
         print("   " + " ".join(dead))
 
-    if stale or unknown_prefixes:
+    if stale or unknown_prefixes or bad_vars:
         print("\nFAIL: the UI will render unstyled elements.")
         return 1
     print("\nOK: every emitted class has a rule.")

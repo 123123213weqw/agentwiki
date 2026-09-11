@@ -420,6 +420,25 @@ code {
 
 .graphwrap { padding: 0; overflow: hidden; }
 .graphwrap canvas { display: block; width: 100%; height: 560px; cursor: default; }
+/* The graph encodes type in colour and weight in radius.  Neither is guessable,
+   so the legend is not decoration: without it the picture is unreadable. */
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 11px 13px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  font-size: 12px;
+}
+.lg-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.lg-key { color: var(--fg-faint); min-width: 96px; }
+.lg-item { display: inline-flex; align-items: center; gap: 5px; color: var(--fg-dim); }
+.lg-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.lg-sm { width: 5px; height: 5px; background: var(--fg-faint); }
+.lg-lg { width: 13px; height: 13px; background: var(--fg-faint); }
 
 /* ------------------------------------------------------------- responsive */
 

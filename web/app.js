@@ -57,6 +57,13 @@ const KIND_LABEL = {
 };
 const kindLabel = k => KIND_LABEL[k] || k;
 
+// Module scope, not inside startGraph(): the legend in viewGraph() needs the
+// same mapping, and a second copy would drift.
+const KIND_COLOR = {
+  repo: '#5eead4', path: '#a78bfa', error: '#f87171', pr: '#fbbf24',
+  issue: '#fb923c', pkg: '#60a5fa', domain: '#f472b6', file: '#94a3b8',
+};
+
 /* ------------------------------------------------------------------ routing */
 
 function currentRoute() {
@@ -346,10 +353,14 @@ function viewSession(id) {
 /* --------------------------------------------------------------- the graph */
 
 function viewGraph() {
+  const legend = WIKI.kind_order
+    .map(k => `<span class="lg-item"><i class="lg-dot" style="background:${KIND_COLOR[k] || '#94a3b8'}"></i>${esc(kindLabel(k))}</span>`)
+    .join('');
   return `
   <section class="hero">
     <h1>图谱</h1>
-    <p class="lede">实体在同一会话中出现即连边。这是你的知识地形长什么样。</p>
+    <p class="lede">一个点 = 一个实体；两个实体在<strong>同一个会话</strong>里出现过就连一条边。
+       所以挨得近的一团，就是"你总是连着一起碰的东西"。</p>
   </section>
   <div class="toolbar">
     <label class="muted small">节点数
@@ -360,7 +371,19 @@ function viewGraph() {
     <label class="muted small"><input type="checkbox" id="g-labels" checked> 显示标签</label>
     <span class="muted small" id="g-info"></span>
   </div>
-  <div class="card graphwrap"><canvas id="graph"></canvas></div>`;
+  <div class="card graphwrap"><canvas id="graph"></canvas></div>
+  <div class="legend">
+    <div class="lg-row"><span class="lg-key">颜色 = 类型</span>${legend}</div>
+    <div class="lg-row"><span class="lg-key">大小 = 提及次数</span>
+      <span class="lg-item"><i class="lg-dot lg-sm"></i>少</span>
+      <span class="lg-item"><i class="lg-dot lg-lg"></i>多</span>
+    </div>
+    <div class="lg-row"><span class="lg-key">怎么用</span>
+      <span class="lg-item">拖拽移动</span>
+      <span class="lg-item">悬停看名字</span>
+      <span class="lg-item">点一下进入它的页面</span>
+    </div>
+  </div>`;
 }
 
 let graphStop = null;
@@ -371,11 +394,6 @@ function startGraph() {
   if (graphStop) graphStop();
   const ctx = canvas.getContext('2d');
   const nSel = $('#g-n'), labels = $('#g-labels'), info = $('#g-info');
-
-  const KIND_COLOR = {
-    repo: '#5eead4', path: '#a78bfa', error: '#f87171', pr: '#fbbf24',
-    issue: '#fb923c', pkg: '#60a5fa', domain: '#f472b6', file: '#94a3b8',
-  };
 
   // Labelling every node turns the dense centre into overlapping text, so only
   // the largest hubs keep a permanent label.  Anything hovered is labelled on
